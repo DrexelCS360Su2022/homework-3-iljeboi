@@ -27,6 +27,11 @@
          (make-procedure (lambda-parameters exp)
                          (lambda-body exp)
                          env))
+        ((and? exp) (process-and (cdr exp) env))
+        ((or? exp) (process-or (cdr exp) env))
+        ((let? exp) (let-function exp env))
+        ((delay? exp) (delay-it (cdr exp) env))
+        ((force? exp) (force-it (cdr exp) env))
         ((begin? exp)
          (eval-sequence (begin-actions exp) env))
         ((cond? exp) (mceval (cond->if exp) env))
@@ -129,6 +134,70 @@
 
 (define (make-lambda parameters body)
   (cons 'lambda (cons parameters body)))
+
+
+
+
+;;;the stuffs
+
+(define (and? exp) (tagged-list? exp 'and))
+
+(define (process-and exp env)
+  (cond
+    [(null? exp) #t]
+    [(null? (cdr exp)) (mceval (car exp) env)]
+    [(true? (mceval (car exp) env)) (process-and (cdr exp) env)]
+    [else #f]
+))
+(define (or? exp) (tagged-list? exp 'or))
+(define (process-or exp env)
+  (cond
+    [(null? exp) #f]
+    [(null? (cdr exp)) (mceval (car exp) env)]
+    [(false? (mceval (car exp) env)) (process-or (cdr exp) env)]
+    [else #t]
+    ))
+(define (let? exp) (tagged-list? exp 'let))
+
+(define (let-binds exp)
+  (cadr exp))
+
+(define (let-vars exp) 
+  (map car (let-binds exp)))
+ 
+(define (let-values exp)
+  (map cadr (let-binds exp)))
+
+(define (let-body exp)
+  (cddr exp)) 
+
+(define (let-function exp env)
+  (eval-sequence (let-body exp)
+                 (extend-environment
+                  (let-vars exp)
+                  (list-of-values (let-values exp) env)
+                  env)))
+
+(define (delay? exp) (tagged-list? exp 'delay))
+
+
+(define (delay->lambda exp)
+  (make-lambda '() exp))
+
+
+(define (delay-it exp env)
+  (mceval (list 'memo-proc (delay->lambda exp)) env)
+  )
+
+(define (force? exp) (tagged-list? exp 'force))
+(define (force-it exp env)
+  (mceval exp env)
+  )
+
+
+
+
+
 
 
 (define (if? exp) (tagged-list? exp 'if))
@@ -293,6 +362,18 @@
                              the-empty-environment)))
     (define-variable! 'true true initial-env)
     (define-variable! 'false false initial-env)
+    (define-variable! 'null null initial-env)
+    (eval-definition '(define (not x)
+                        (if x false true)) initial-env)
+    (eval-definition '(define (memo-proc proc)
+                        (let ((already-run? false)
+                              (result null))
+                          (lambda ()
+                            (if (not already-run?)
+                                (begin (set! result (proc))
+                                       (set! already-run? true)
+                                       result)
+                                result)))) initial-env)
     initial-env))
 
 (define (primitive-procedure? proc)
@@ -305,6 +386,17 @@
         (list 'cdr cdr)
         (list 'cons cons)
         (list 'null? null?)
+        (list 'eq? eq?)
+        (list '+ +)
+        (list '* *)
+        (list '- -)
+        (list '/ /)
+        (list '< <)
+        (list '<= <=)
+        (list '= =)
+        (list '>= >=)
+        (list '> >)
+        (list 'error (lambda () (error "Metacircular Interpreter Aborted")))
 ;;      more primitives
         ))
 
